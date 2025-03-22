@@ -1,0 +1,24 @@
+version: '3'
+
+services:
+  nginx-build-ubuntu22:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.ubuntu22
+    volumes:
+      - ./output/ubuntu22:/output
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+      - DISABLE_LTO=1
+
+  nginx-build-ubuntu24:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.ubuntu24
+    volumes:
+      - ./output/ubuntu24:/output
+    environment:
+      - DEBIAN_FRONTEND=noninteractive
+      - DISABLE_LTO=1 

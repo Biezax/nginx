@@ -1,0 +1,48 @@
+FROM --platform=linux/amd64 ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpcre3-dev \
+    zlib1g-dev \
+    libssl-dev \
+    libxml2-dev \
+    libxslt1-dev \
+    libgd-dev \
+    libgeoip-dev \
+    libperl-dev \
+    devscripts \
+    debhelper \
+    quilt \
+    dpkg-dev \
+    libpam0g-dev \
+    libgeoip-dev \
+    libmaxminddb-dev \
+    libmaxminddb0 \
+    libldap2-dev \
+    liblua5.4-dev \
+    libluajit-5.1-dev \
+    libluajit-5.1-common \
+    libffi-dev \
+    mercurial \
+    git \
+    wget \
+    curl \
+    dh-exec \
+    pkg-config \
+    libbrotli-dev \
+    lsb-release \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create workspace directory
+WORKDIR /build
+
+# Copy build script
+COPY ./build-deb.sh /build/
+RUN chmod +x /build/build-deb.sh
+
+# Run the build script when container starts
+ENTRYPOINT ["/build/build-deb.sh"] 
