@@ -9,8 +9,8 @@ services:
     volumes:
       - ./output/ubuntu22:/output
     environment:
-      - DEBIAN_FRONTEND=noninteractive
       - DISABLE_LTO=1
+      - NGINX_VERSION=1.26.3
 
   nginx-build-ubuntu24:
     platform: linux/amd64
@@ -20,5 +20,5 @@ services:
     volumes:
       - ./output/ubuntu24:/output
     environment:
-      - DEBIAN_FRONTEND=noninteractive
       - DISABLE_LTO=1 
+      - NGINX_VERSION=1.26.3

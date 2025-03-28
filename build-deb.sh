@@ -55,7 +55,7 @@ cd "$DEB_DIR/modules"
 # Modules
 git clone https://github.com/openresty/headers-more-nginx-module http-headers-more-filter
 git clone https://github.com/sto/ngx_http_auth_pam_module http-auth-pam
-git clone https://github.com/FRiCKLE/ngx_cache_purge http-cache-purge
+git clone https://github.com/Danrancan/ngx_cache_purge_dynamic http-cache-purge
 git clone https://github.com/arut/nginx-dav-ext-module http-dav-ext
 git clone https://github.com/vision5/ngx_devel_kit http-ndk
 git clone https://github.com/openresty/echo-nginx-module http-echo
@@ -206,19 +206,19 @@ override_dh_auto_configure:
 	--with-stream_realip_module \\
 	--with-stream_ssl_module \\
 	--with-stream_ssl_preread_module \\
-	--add-module=\$(BASEDIR)/modules/http-headers-more-filter \\
-	--add-module=\$(BASEDIR)/modules/http-auth-pam \\
-	--add-module=\$(BASEDIR)/modules/http-cache-purge \\
-	--add-module=\$(BASEDIR)/modules/http-dav-ext \\
-	--add-module=\$(BASEDIR)/modules/http-ndk \\
-	--add-module=\$(BASEDIR)/modules/http-echo \\
-	--add-module=\$(BASEDIR)/modules/http-fancyindex \\
-	--add-module=\$(BASEDIR)/modules/nchan \\
-	--add-module=\$(BASEDIR)/modules/http-lua \\
-	--add-module=\$(BASEDIR)/modules/rtmp \\
-	--add-module=\$(BASEDIR)/modules/http-uploadprogress \\
-	--add-module=\$(BASEDIR)/modules/http-subs-filter \\
-	--add-module=\$(BASEDIR)/modules/http-geoip2
+	--add-dynamic-module=\$(BASEDIR)/modules/http-headers-more-filter \\
+	--add-dynamic-module=\$(BASEDIR)/modules/http-auth-pam \\
+	--add-dynamic-module=\$(BASEDIR)/modules/http-cache-purge \\
+	--add-dynamic-module=\$(BASEDIR)/modules/http-dav-ext \\
+	--add-dynamic-module=\$(BASEDIR)/modules/http-ndk \\
+	--add-dynamic-module=\$(BASEDIR)/modules/http-echo \\
+	--add-dynamic-module=\$(BASEDIR)/modules/http-fancyindex \\
+	--add-dynamic-module=\$(BASEDIR)/modules/nchan \\
+	--add-dynamic-module=\$(BASEDIR)/modules/http-lua \\
+	--add-dynamic-module=\$(BASEDIR)/modules/rtmp \\
+	--add-dynamic-module=\$(BASEDIR)/modules/http-uploadprogress \\
+	--add-dynamic-module=\$(BASEDIR)/modules/http-subs-filter \\
+	--add-dynamic-module=\$(BASEDIR)/modules/http-geoip2
 
 override_dh_auto_build:
 ifeq ("\${DISABLE_LTO}", "1")
@@ -284,7 +284,6 @@ set -e
 
 if [ "\$1" = "configure" ]; then
     mkdir -p /var/lib/nginx/body /var/lib/nginx/fastcgi /var/lib/nginx/proxy /var/lib/nginx/scgi /var/lib/nginx/uwsgi || { echo "Failed to create nginx directories"; exit 1; }
-    mkdir -p /etc/nginx/conf.d || { echo "Failed to create nginx conf directory"; exit 1; }
 
     chown -R www-data:adm /var/log/nginx 2>/dev/null || echo "Warning: Could not set permissions on /var/log/nginx"
     chown -R www-data:www-data /var/lib/nginx || echo "Warning: Could not set permissions on /var/lib/nginx"
@@ -304,9 +303,40 @@ if [ "\$1" = "configure" ]; then
         chown www-data:adm "\$logdir/error.log" 2>/dev/null || echo "Warning: Could not set ownership on error.log"
     fi
 
-    if [ ! -f /etc/nginx/conf.d/default.conf ]; then
-        echo "No default configuration found. You may need to create one."
-    fi
+    
+    mkdir -p /etc/nginx/modules-available
+    cat > /etc/nginx/modules-available/00-dynamic-modules.conf << EOFMODULES
+
+# Headers More
+load_module /usr/lib/nginx/modules/ngx_http_headers_more_filter_module.so;
+# Auth PAM
+load_module /usr/lib/nginx/modules/ngx_http_auth_pam_module.so;
+# Cache Purge
+load_module /usr/lib/nginx/modules/ngx_http_cache_purge_module.so;
+# DAV Extended
+load_module /usr/lib/nginx/modules/ngx_http_dav_ext_module.so;
+# Development Kit
+load_module /usr/lib/nginx/modules/ndk_http_module.so;
+# Echo
+load_module /usr/lib/nginx/modules/ngx_http_echo_module.so;
+# Fancy Index
+load_module /usr/lib/nginx/modules/ngx_http_fancyindex_module.so;
+# NChan
+load_module /usr/lib/nginx/modules/ngx_nchan_module.so;
+# Lua
+load_module /usr/lib/nginx/modules/ngx_http_lua_module.so;
+# RTMP
+load_module /usr/lib/nginx/modules/ngx_rtmp_module.so;
+# Upload Progress
+load_module /usr/lib/nginx/modules/ngx_http_uploadprogress_module.so;
+# Substitutions Filter
+load_module /usr/lib/nginx/modules/ngx_http_subs_filter_module.so;
+# GeoIP2
+load_module /usr/lib/nginx/modules/ngx_http_geoip2_module.so;
+EOFMODULES
+
+    mkdir -p /etc/nginx/modules-enabled
+    ln -sf ../modules-available/00-dynamic-modules.conf /etc/nginx/modules-enabled/
 fi
 
 #DEBHELPER#
@@ -374,17 +404,21 @@ debian/tmp/usr/sbin/nginx usr/sbin/
 debian/tmp/etc/nginx/* etc/nginx/
 debian/tmp/usr/share/nginx/html/* usr/share/nginx/html/
 debian/service/nginx.service lib/systemd/system/
-debian/config/nginx.logrotate etc/logrotate.d/nginx
+debian/config/nginx.logrotate etc/logrotate.d/
 usr/share/lua/5.1/* usr/share/lua/5.1/
+debian/tmp/usr/lib/nginx/modules/*.so usr/lib/nginx/modules/
 EOF
 
 cat > debian/$PACKAGE_NAME.dirs << EOF
 etc/nginx
 etc/nginx/conf.d
+etc/nginx/modules-available
+etc/nginx/modules-enabled
 usr/share/nginx/html
 usr/share/lua/5.1
 usr/share/lua/5.1/resty
 usr/share/lua/5.1/ngx
+usr/lib/nginx/modules
 var/lib/nginx/body
 var/lib/nginx/fastcgi
 var/lib/nginx/proxy
