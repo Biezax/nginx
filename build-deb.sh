@@ -9,7 +9,8 @@ NGINX_VERSION=${NGINX_VERSION:-$(curl -s https://nginx.org/en/download.html | gr
 UBUNTU_VERSION=$(lsb_release -rs)
 UBUNTU_CODENAME=$(lsb_release -cs)
 
-PACKAGE_NAME="nginx-consultant-$UBUNTU_CODENAME"
+PACKAGE_BASE_NAME=${PACKAGE_BASE_NAME:-nginx-custom}
+PACKAGE_NAME="$PACKAGE_BASE_NAME-$UBUNTU_CODENAME"
 PACKAGE_REVISION=$(date +%Y%m%d%H%M)
 
 export LUAJIT_LIB=/usr/lib/x86_64-linux-gnu

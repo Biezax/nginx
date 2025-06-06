@@ -9,6 +9,7 @@ services:
     environment:
       - DISABLE_LTO=1
       - NGINX_VERSION=1.26.3
+      - PACKAGE_BASE_NAME=nginx-custom
 
   nginx-build-ubuntu24:
     platform: linux/amd64
@@ -20,3 +21,4 @@ services:
     environment:
       - DISABLE_LTO=1 
       - NGINX_VERSION=1.26.3
+      - PACKAGE_BASE_NAME=nginx-custom

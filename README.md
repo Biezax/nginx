@@ -21,7 +21,7 @@ This project provides an automated solution that:
 - **Ensures compatibility** - uses standard Ubuntu paths and conventions, making it a drop-in replacement
 - **Provides version-specific packages** - separate builds for different Ubuntu versions ensure optimal compatibility
 
-The resulting packages (`nginx-consultant-jammy`, `nginx-consultant-noble`) can be installed and managed just like official Ubuntu packages, but with the extended functionality that was previously available in nginx-extras and more.
+The resulting packages (`nginx-custom-jammy`, `nginx-custom-noble`) can be installed and managed just like official Ubuntu packages, but with the extended functionality that was previously available in nginx-extras and more.
 
 This script is designed to build Nginx with additional modules for Ubuntu 22.04 (jammy) and 24.04 (noble), creating Debian packages that can be installed using standard apt tools.
 
@@ -97,6 +97,9 @@ docker-compose up --build
 
 # Build with LTO disabled (to solve compatibility issues on ARM)
 DISABLE_LTO=1 docker-compose up --build
+
+# Build with custom package name
+PACKAGE_BASE_NAME=my-nginx docker-compose up --build
 ```
 
 ### Build Parameters
@@ -105,17 +108,17 @@ DISABLE_LTO=1 docker-compose up --build
 |-----------|-------------|---------------|
 | DISABLE_LTO | Disables Link Time Optimization to solve compilation issues on ARM | 0 (enabled) |
 | NGINX_VERSION | Nginx version to build | Automatically detects latest stable version |
-| PACKAGE_NAME | Package name | nginx-consultant-{ubuntu_codename} |
+| PACKAGE_BASE_NAME | Base package name (final name will be {base_name}-{ubuntu_codename}) | nginx-custom |
 | PACKAGE_REVISION | Package revision | Generated based on date and time (YYYYMMDDHHMM) |
 
 ### Package Installation
 
 ```bash
 # For Ubuntu 22.04
-apt install ./nginx-consultant-jammy_*.deb
+apt install ./nginx-custom-jammy_*.deb
 
 # For Ubuntu 24.04
-apt install ./nginx-consultant-noble_*.deb
+apt install ./nginx-custom-noble_*.deb
 ```
 
 ## Installation Notes
