@@ -1,9 +1,0 @@
-mkdir -p debian/tmp/usr/share/nginx/html; \
-if test -d debian/tmp/usr/html; then \
-		echo "HTML directory found, copying files..."; \
-		cp -r debian/tmp/usr/html/* debian/tmp/usr/share/nginx/html/ 2>/dev/null || true; \
-		echo "HTML files processed"; \
-		rm -rf debian/tmp/usr/html; \
-else \
-		echo "No HTML directory found at debian/tmp/usr/html"; \
-fi 
