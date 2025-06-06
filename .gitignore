@@ -1,21 +1,18 @@
-# Директории вывода
+# Output directories
 output/
 
-# Временные файлы
+# Temporary files
 *.tmp
 *.swp
 *~
 
-# Логи
 *.log
 
-# Файлы Docker/docker-compose
+# Environment variables
 .env
 
-# Архивы
 *.tar
 *.gz
 *.zip
 
-# Другие файлы, которые не должны быть в репозитории
 *.deb 
