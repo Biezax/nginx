@@ -80,12 +80,22 @@ echo "Preparing Debian package structure..."
 mkdir -p debian/source
 echo "3.0 (quilt)" > debian/source/format
 
+# Determine correct debhelper-compat version based on Ubuntu version
+if [ "$UBUNTU_VERSION" = "20.04" ]; then
+    DEBHELPER_COMPAT_VERSION="12"
+else
+    DEBHELPER_COMPAT_VERSION="13"
+fi
+
+echo "Ubuntu version: $UBUNTU_VERSION"
+echo "Using debhelper-compat version: $DEBHELPER_COMPAT_VERSION"
+
 cat > debian/control << EOF
 Source: nginx
 Section: httpd
 Priority: optional
 Maintainer: Stanislav Rossovskii <custom@example.com>
-Build-Depends: debhelper-compat (= 13),
+Build-Depends: debhelper-compat (= $DEBHELPER_COMPAT_VERSION),
  libpcre3-dev, zlib1g-dev, libssl-dev, 
  libxml2-dev, libxslt1-dev, libgd-dev, libgeoip-dev, libperl-dev,
  libpam0g-dev, libmaxminddb-dev, libldap2-dev, liblua5.3-dev | liblua5.4-dev,

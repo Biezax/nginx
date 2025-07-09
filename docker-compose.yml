@@ -1,5 +1,19 @@
 services:
+  nginx-build-ubuntu20:
+    profiles: ["ubuntu20", "all"]
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.ubuntu20
+    volumes:
+      - ./output/ubuntu20:/output
+    environment:
+      - DISABLE_LTO=${DISABLE_LTO:-1}
+      - NGINX_VERSION=${NGINX_VERSION:-1.28.0}
+      - PACKAGE_BASE_NAME=${PACKAGE_BASE_NAME:-nginx-custom}
+
   nginx-build-ubuntu22:
+    profiles: ["ubuntu22", "all"]
     platform: linux/amd64
     build:
       context: .
@@ -7,11 +21,12 @@ services:
     volumes:
       - ./output/ubuntu22:/output
     environment:
-      - DISABLE_LTO=1
-      - NGINX_VERSION=1.26.3
-      - PACKAGE_BASE_NAME=nginx-custom
+      - DISABLE_LTO=${DISABLE_LTO:-1}
+      - NGINX_VERSION=${NGINX_VERSION:-1.28.0}
+      - PACKAGE_BASE_NAME=${PACKAGE_BASE_NAME:-nginx-custom}
 
   nginx-build-ubuntu24:
+    profiles: ["ubuntu24", "all"]
     platform: linux/amd64
     build:
       context: .
@@ -19,6 +34,6 @@ services:
     volumes:
       - ./output/ubuntu24:/output
     environment:
-      - DISABLE_LTO=1 
-      - NGINX_VERSION=1.26.3
-      - PACKAGE_BASE_NAME=nginx-custom
+      - DISABLE_LTO=${DISABLE_LTO:-1}
+      - NGINX_VERSION=${NGINX_VERSION:-1.28.0}
+      - PACKAGE_BASE_NAME=${PACKAGE_BASE_NAME:-nginx-custom}

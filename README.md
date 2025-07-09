@@ -29,11 +29,11 @@ This script is designed to build Nginx with additional modules for Ubuntu 22.04 
 
 - Automatic detection of the latest stable Nginx version
 - Building with additional modules not included in official Ubuntu packages
-- Creating separate packages for different Ubuntu versions (`nginx-consultant-jammy`, `nginx-consultant-noble`)
+- Creating separate packages for different Ubuntu versions (`nginx-custom-jammy`, `nginx-custom-noble`)
 - Compliance with Debian/Ubuntu package standards
 - Uses standard file paths for compatibility with the Ubuntu ecosystem
 
-## Pre-installed Modules
+## Pre-installed Modules:
 
 The build includes the following additional modules:
 
@@ -91,21 +91,32 @@ All modules are statically compiled into the executable for maximum performance.
 
 ### Building Packages
 
+**Note**: A profile must be specified. Without a profile, no services will be started.
+
 ```bash
-# Basic build with LTO enabled
-docker-compose up --build
+# Build all packages (all Ubuntu versions)
+docker compose --profile all up --build
+
+# Build specific Ubuntu version using profiles
+docker compose --profile ubuntu22 up --build   # Only Ubuntu 22.04
+docker compose --profile ubuntu24 up --build   # Only Ubuntu 24.04
+docker compose --profile ubuntu20 up --build   # Only Ubuntu 20.04
+
+# Build multiple versions
+docker compose --profile ubuntu22 --profile ubuntu24 up --build
 
 # Build with LTO disabled (to solve compatibility issues on ARM)
-DISABLE_LTO=1 docker-compose up --build
+DISABLE_LTO=1 docker compose --profile ubuntu24 up --build
 
 # Build with custom package name
-PACKAGE_BASE_NAME=my-nginx docker-compose up --build
+PACKAGE_BASE_NAME=my-nginx docker compose --profile ubuntu22 up --build
 ```
 
 ### Build Parameters
 
 | Parameter | Description | Default Value |
 |-----------|-------------|---------------|
+| --profile | Selects specific Ubuntu version to build (ubuntu20, ubuntu22, ubuntu24, all) | No default profile |
 | DISABLE_LTO | Disables Link Time Optimization to solve compilation issues on ARM | 0 (enabled) |
 | NGINX_VERSION | Nginx version to build | Automatically detects latest stable version |
 | PACKAGE_BASE_NAME | Base package name (final name will be {base_name}-{ubuntu_codename}) | nginx-custom |
@@ -122,7 +133,6 @@ apt install ./nginx-custom-noble_*.deb
 ```
 
 ## Installation Notes
-
 - The package conflicts with standard Nginx packages in Ubuntu (`nginx`, `nginx-core`, `nginx-full`, `nginx-light`, `nginx-extras`, `nginx-mainline`). Installing any of these packages will remove them.
 - The package uses standard file paths and will work as a replacement for standard Nginx:
   - Executable file: `/usr/sbin/nginx`
@@ -138,7 +148,11 @@ apt install ./nginx-custom-noble_*.deb
 On some architectures (especially ARM), compilation errors may occur when using Link Time Optimization (LTO). If you encounter such errors, try building with LTO disabled:
 
 ```bash
-DISABLE_LTO=1 docker-compose up --build
+# For all versions
+DISABLE_LTO=1 docker compose --profile all up --build
+
+# For specific Ubuntu version
+DISABLE_LTO=1 docker compose --profile ubuntu24 up --build
 ```
 
 ### Installation Conflicts
