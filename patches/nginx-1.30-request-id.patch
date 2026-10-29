@@ -1,0 +1,416 @@
+--- a/src/http/ngx_http_core_module.h
++++ b/src/http/ngx_http_core_module.h
+@@ -176,6 +176,8 @@
+     ngx_array_t               *ports;
+ 
+     ngx_http_phase_t           phases[NGX_HTTP_LOG_PHASE + 1];
++
++    ngx_int_t                 request_id_index;
+ } ngx_http_core_main_conf_t;
+ 
+ 
+@@ -212,6 +214,9 @@
+     unsigned                    allow_connect:1;
+ 
+     ngx_http_core_loc_conf_t  **named_locations;
++
++    ngx_flag_t                  log_request_id;
++    ngx_int_t                   request_id_source;
+ } ngx_http_core_srv_conf_t;
+ 
+ 
+--- a/src/http/ngx_http_request.h
++++ b/src/http/ngx_http_request.h
+@@ -611,6 +611,11 @@
+ 
+     unsigned                          http_minor:16;
+     unsigned                          http_major:16;
++
++    ngx_str_t                         log_request_id;
++    u_char                            correlation_id[32];
++    unsigned                          correlation_id_pending:1;
++    unsigned                          correlation_id_ready:1;
+ };
+ 
+ 
+--- a/src/http/ngx_http_core_module.c
++++ b/src/http/ngx_http_core_module.c
+@@ -68,6 +68,8 @@
+     void *conf);
+ static char *ngx_http_core_error_log(ngx_conf_t *cf, ngx_command_t *cmd,
+     void *conf);
++static char *ngx_http_core_error_log_request_id(ngx_conf_t *cf,
++    ngx_command_t *cmd, void *conf);
+ static char *ngx_http_core_keepalive(ngx_conf_t *cf, ngx_command_t *cmd,
+     void *conf);
+ static char *ngx_http_core_internal(ngx_conf_t *cf, ngx_command_t *cmd,
+@@ -704,6 +706,13 @@
+       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
+       ngx_http_core_error_log,
+       NGX_HTTP_LOC_CONF_OFFSET,
++      0,
++      NULL },
++
++    { ngx_string("error_log_request_id"),
++      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_CONF_TAKE1,
++      ngx_http_core_error_log_request_id,
++      NGX_HTTP_SRV_CONF_OFFSET,
+       0,
+       NULL },
+ 
+@@ -893,6 +902,11 @@
+ 
+     while (ph[r->phase_handler].checker) {
+ 
++        if (r->phase_handler == (ngx_int_t) cmcf->phase_engine.server_rewrite_index)
++        {
++            ngx_http_init_correlation_id(r);
++        }
++
+         rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
+ 
+         if (rc == NGX_OK) {
+@@ -3467,6 +3481,7 @@
+ 
+     cmcf->variables_hash_max_size = NGX_CONF_UNSET_UINT;
+     cmcf->variables_hash_bucket_size = NGX_CONF_UNSET_UINT;
++    cmcf->request_id_index = NGX_CONF_UNSET;
+ 
+     return cmcf;
+ }
+@@ -3530,6 +3545,8 @@
+     cscf->ignore_invalid_headers = NGX_CONF_UNSET;
+     cscf->merge_slashes = NGX_CONF_UNSET;
+     cscf->underscores_in_headers = NGX_CONF_UNSET;
++    cscf->log_request_id = NGX_CONF_UNSET;
++    cscf->request_id_source = NGX_CONF_UNSET;
+ 
+     cscf->file_name = cf->conf_file->file.name.data;
+     cscf->line = cf->conf_file->line;
+@@ -3577,6 +3594,10 @@
+ 
+     ngx_conf_merge_value(conf->underscores_in_headers,
+                               prev->underscores_in_headers, 0);
++
++    ngx_conf_merge_value(conf->log_request_id, prev->log_request_id, 0);
++    ngx_conf_merge_value(conf->request_id_source, prev->request_id_source,
++                        NGX_CONF_UNSET);
+ 
+     if (conf->server_names.nelts == 0) {
+         /* the array has 4 empty preallocated elements, so push cannot fail */
+@@ -5128,6 +5149,55 @@
+ 
+ 
+ static char *
++ngx_http_core_error_log_request_id(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
++{
++    ngx_http_core_srv_conf_t  *cscf = conf;
++
++    ngx_str_t                  *value, name;
++    ngx_http_core_main_conf_t   *cmcf;
++
++    if (cscf->log_request_id != NGX_CONF_UNSET) {
++        return "is duplicate";
++    }
++
++    value = cf->args->elts;
++
++    if (ngx_strcmp(value[1].data, "off") == 0) {
++        cscf->log_request_id = 0;
++        return NGX_CONF_OK;
++    }
++
++    if (value[1].len < 2 || value[1].data[0] != '$') {
++        return "requires off or a variable";
++    }
++
++    name.len = value[1].len - 1;
++    name.data = value[1].data + 1;
++
++    if (name.len == sizeof("correlation_id") - 1
++        && ngx_strncasecmp(name.data, (u_char *) "correlation_id", name.len) == 0)
++    {
++        return "cannot use $correlation_id as its source";
++    }
++
++    cscf->request_id_source = ngx_http_get_variable_index(cf, &name);
++    if (cscf->request_id_source == NGX_ERROR) {
++        return NGX_CONF_ERROR;
++    }
++
++    cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
++    ngx_str_set(&name, "request_id");
++    cmcf->request_id_index = ngx_http_get_variable_index(cf, &name);
++    if (cmcf->request_id_index == NGX_ERROR) {
++        return NGX_CONF_ERROR;
++    }
++
++    cscf->log_request_id = 1;
++    return NGX_CONF_OK;
++}
++
++
++static char *
+ ngx_http_core_keepalive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+ {
+     ngx_http_core_loc_conf_t *clcf = conf;
+--- a/src/http/ngx_http_variables.c
++++ b/src/http/ngx_http_variables.c
+@@ -108,6 +108,8 @@
+ static ngx_int_t ngx_http_variable_request_time(ngx_http_request_t *r,
+     ngx_http_variable_value_t *v, uintptr_t data);
+ static ngx_int_t ngx_http_variable_request_id(ngx_http_request_t *r,
++    ngx_http_variable_value_t *v, uintptr_t data);
++static ngx_int_t ngx_http_variable_correlation_id(ngx_http_request_t *r,
+     ngx_http_variable_value_t *v, uintptr_t data);
+ static ngx_int_t ngx_http_variable_status(ngx_http_request_t *r,
+     ngx_http_variable_value_t *v, uintptr_t data);
+@@ -316,6 +318,10 @@
+       ngx_http_variable_request_id,
+       0, 0, 0 },
+ 
++    { ngx_string("correlation_id"), NULL,
++      ngx_http_variable_correlation_id,
++      0, NGX_HTTP_VAR_NOCACHEABLE, 0 },
++
+     { ngx_string("status"), NULL,
+       ngx_http_variable_status, 0,
+       NGX_HTTP_VAR_NOCACHEABLE, 0 },
+@@ -2330,6 +2336,29 @@
+     ngx_sprintf(id, "%08xD%08xD%08xD%08xD",
+                 (uint32_t) ngx_random(), (uint32_t) ngx_random(),
+                 (uint32_t) ngx_random(), (uint32_t) ngx_random());
++
++    return NGX_OK;
++}
++
++
++static ngx_int_t
++ngx_http_variable_correlation_id(ngx_http_request_t *r,
++    ngx_http_variable_value_t *v, uintptr_t data)
++{
++    r = r->main;
++
++    if (!r->correlation_id_ready) {
++        /* A read before ID selection must not cache a missing ID. */
++        v->not_found = 1;
++        v->no_cacheable = 1;
++        return NGX_OK;
++    }
++
++    v->len = sizeof(r->correlation_id);
++    v->valid = 1;
++    v->no_cacheable = 0;
++    v->not_found = 0;
++    v->data = r->correlation_id;
+ 
+     return NGX_OK;
+ }
+--- a/src/http/ngx_http_request.c
++++ b/src/http/ngx_http_request.c
+@@ -570,6 +570,7 @@
+     ngx_http_connection_t      *hc;
+     ngx_http_core_srv_conf_t   *cscf;
+     ngx_http_core_main_conf_t  *cmcf;
++    ngx_http_variable_value_t  *v;
+ 
+     hc = c->data;
+ 
+@@ -659,7 +660,107 @@
+ 
+     r->log_handler = ngx_http_log_error_handler;
+ 
++    if (cmcf->request_id_index != NGX_CONF_UNSET) {
++        v = ngx_http_get_indexed_variable(r, cmcf->request_id_index);
++        if (v != NULL && !v->not_found && v->len == 32) {
++            r->log_request_id.len = v->len;
++            r->log_request_id.data = v->data;
++        }
++    }
++
+     return r;
++}
++
++
++void
++ngx_http_init_correlation_id(ngx_http_request_t *r)
++{
++    u_char                      c, *id;
++    size_t                      variables_size, snapshot_size;
++    ngx_uint_t                  i;
++    ngx_http_core_srv_conf_t    *cscf;
++    ngx_http_core_main_conf_t   *cmcf;
++    ngx_http_variable_value_t   *v, *saved_variables;
++#if (NGX_PCRE)
++    int                        *captures;
++    size_t                      captures_size;
++    u_char                     *captures_data;
++    ngx_uint_t                  ncaptures, realloc_captures;
++#endif
++
++    if (r != r->main || !r->correlation_id_pending) {
++        return;
++    }
++
++    r->correlation_id_pending = 0;
++
++    cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
++    if (!cscf->log_request_id || r->log_request_id.len != 32) {
++        return;
++    }
++
++    /* Select after post-read, or on rejection before entering the phases. */
++    id = r->log_request_id.data;
++    v = NULL;
++
++    /* Source evaluation must not change variable cache or regex captures. */
++    cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
++    variables_size = cmcf->variables.nelts * sizeof(ngx_http_variable_value_t);
++    snapshot_size = variables_size;
++
++#if (NGX_PCRE)
++    captures = r->captures;
++    ncaptures = r->ncaptures;
++    captures_data = r->captures_data;
++    realloc_captures = r->realloc_captures;
++    captures_size = captures != NULL ? ncaptures * sizeof(int) : 0;
++    snapshot_size += captures_size;
++#endif
++
++    saved_variables = ngx_palloc(r->pool, snapshot_size);
++
++    if (saved_variables != NULL) {
++        ngx_memcpy(saved_variables, r->variables, variables_size);
++#if (NGX_PCRE)
++        if (captures_size) {
++            ngx_memcpy((u_char *) saved_variables + variables_size,
++                       captures, captures_size);
++        }
++#endif
++        v = ngx_http_get_flushed_variable(r, cscf->request_id_source);
++    }
++
++    if (v != NULL && !v->not_found && v->len == 32) {
++        for (i = 0; i < 32; i++) {
++            c = ngx_tolower(v->data[i]);
++            if ((c < '0' || c > '9') && (c < 'a' || c > 'f')) {
++                break;
++            }
++        }
++
++        if (i == 32) {
++            id = v->data;
++        }
++    }
++
++    ngx_memcpy(r->correlation_id, id, 32);
++
++    if (saved_variables != NULL) {
++        ngx_memcpy(r->variables, saved_variables, variables_size);
++#if (NGX_PCRE)
++        if (captures_size) {
++            ngx_memcpy(captures, (u_char *) saved_variables + variables_size,
++                       captures_size);
++        }
++        r->captures = captures;
++        r->ncaptures = ncaptures;
++        r->captures_data = captures_data;
++        r->realloc_captures = realloc_captures;
++#endif
++        ngx_pfree(r->pool, saved_variables);
++    }
++
++    r->correlation_id_ready = 1;
+ }
+ 
+ 
+@@ -2101,6 +2202,8 @@
+ 
+     c = r->connection;
+ 
++    r->correlation_id_pending = 1;
++
+ #if (NGX_HTTP_SSL)
+ 
+     if (r->http_connection->ssl) {
+@@ -2110,6 +2213,7 @@
+         ngx_http_ssl_srv_conf_t  *sscf;
+ 
+         if (c->ssl == NULL) {
++            ngx_http_init_correlation_id(r);
+             ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                           "client sent plain HTTP request to HTTPS port");
+             ngx_http_finalize_request(r, NGX_HTTP_TO_HTTPS);
+@@ -2124,6 +2228,7 @@
+             if (rc != X509_V_OK
+                 && (sscf->verify != 3 || !ngx_ssl_verify_error_optional(rc)))
+             {
++                ngx_http_init_correlation_id(r);
+                 ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                               "client SSL certificate verify error: (%l:%s)",
+                               rc, X509_verify_cert_error_string(rc));
+@@ -2139,6 +2244,7 @@
+                 cert = SSL_get_peer_certificate(c->ssl->connection);
+ 
+                 if (cert == NULL) {
++                    ngx_http_init_correlation_id(r);
+                     ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                                   "client sent no required SSL certificate");
+ 
+@@ -2153,6 +2259,7 @@
+             }
+ 
+             if (ngx_ssl_ocsp_get_status(c, &s) != NGX_OK) {
++                ngx_http_init_correlation_id(r);
+                 ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                               "client SSL certificate verify error: %s", s);
+ 
+@@ -4081,9 +4188,25 @@
+     char                      *uri_separator;
+     u_char                    *p;
+     ngx_http_upstream_t       *u;
++    ngx_http_request_t        *mr;
+     ngx_http_core_srv_conf_t  *cscf;
+ 
+     cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
++
++    mr = r->main;
++    if (cscf->log_request_id && mr->log_request_id.len) {
++        p = ngx_snprintf(buf, len, ", local_request_id: \"%V\"",
++                         &mr->log_request_id);
++        len -= p - buf;
++        buf = p;
++
++        if (mr->correlation_id_ready) {
++            p = ngx_snprintf(buf, len, ", request_id: \"%*s\"",
++                             sizeof(mr->correlation_id), mr->correlation_id);
++            len -= p - buf;
++            buf = p;
++        }
++    }
+ 
+     p = ngx_snprintf(buf, len, ", server: %V", &cscf->server_name);
+     len -= p - buf;
+--- a/src/http/ngx_http.h
++++ b/src/http/ngx_http.h
+@@ -12,6 +12,12 @@
+ #include <ngx_config.h>
+ #include <ngx_core.h>
++#include <nginx.h>
+ 
+ 
++#if (nginx_version < 1030006)
++#error "The request ID patch requires nginx 1.30.6 or newer"
++#endif
++
++
+ typedef struct ngx_http_request_s     ngx_http_request_t;
+ typedef struct ngx_http_upstream_s    ngx_http_upstream_t;
+@@ -125,6 +131,7 @@
+ ngx_http_request_t *ngx_http_create_request(ngx_connection_t *c);
+ ngx_int_t ngx_http_process_request_uri(ngx_http_request_t *r);
+ void ngx_http_process_request(ngx_http_request_t *r);
++void ngx_http_init_correlation_id(ngx_http_request_t *r);
+ void ngx_http_update_location_config(ngx_http_request_t *r);
+ void ngx_http_handler(ngx_http_request_t *r);
+ void ngx_http_run_posted_requests(ngx_connection_t *c);

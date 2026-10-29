@@ -5,6 +5,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
+    ca-certificates \
+    cmake \
     libpcre3-dev \
     zlib1g-dev \
     libssl-dev \
@@ -23,26 +25,35 @@ RUN apt-get update && apt-get install -y \
     libmaxminddb0 \
     libldap2-dev \
     liblua5.3-dev \
-    libluajit-5.1-dev \
-    libluajit-5.1-common \
     libffi-dev \
+    libclang-dev \
+    libc-ares-dev \
+    libre2-dev \
     mercurial \
     git \
     wget \
     curl \
     dh-exec \
     pkg-config \
+    patchelf \
     libbrotli-dev \
     lsb-release \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+ARG RUST_VERSION=1.81.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+    | sh -s -- -y --profile minimal --default-toolchain "$RUST_VERSION" --no-modify-path
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Create workspace directory
 WORKDIR /build
 
 # Copy build script
 COPY ./build-deb.sh /build/
+COPY ./nginx-upgrade /build/
+COPY ./patches/ /build/patches/
 RUN chmod +x /build/build-deb.sh
 
 # Run the build script when container starts
-ENTRYPOINT ["/build/build-deb.sh"] 
+ENTRYPOINT ["/build/build-deb.sh"]

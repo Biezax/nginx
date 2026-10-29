@@ -1,0 +1,102 @@
+#!/bin/bash
+# Seamless Nginx binary upgrade for nginx.service.
+# Exit codes: 0 upgraded; 1 failed, inspect the running master; 2 not possible,
+# Nginx was not changed and a restart is safe; 3 installed binary already runs;
+# 4 previous upgrade is still draining, Nginx was not changed, retry later.
+set -euo pipefail
+
+service=nginx.service
+pidfile=/run/nginx.pid
+binary=/usr/sbin/nginx
+old_pid=
+new_pid=
+
+fail() {
+    echo "nginx-upgrade: $* (old master=${old_pid:-unknown}, new master=${new_pid:-unknown})" >&2
+    exit 1
+}
+
+unsupported() {
+    echo "nginx-upgrade: $*; Nginx was not changed" >&2
+    exit 2
+}
+
+pending() {
+    echo "nginx-upgrade: $*; Nginx was not changed, retry after it finishes" >&2
+    exit 4
+}
+
+read_pid() {
+    local pid
+    pid=$(cat "$1" 2>/dev/null) || return 1
+    [[ $pid =~ ^[1-9][0-9]*$ ]] && (( pid > 1 )) || return 1
+    printf '%s\n' "$pid"
+}
+
+executable() {
+    stat -Lc '%d:%i' "$1" 2>/dev/null
+}
+
+old_master_alive() {
+    [[ $(executable "/proc/$old_pid/exe") == "$old_executable" ]]
+}
+
+new_master_alive() {
+    local parent
+    [[ -n $new_pid && $new_pid != "$old_pid" ]] || return 1
+    parent=$(ps -o ppid= -p "$new_pid") || return 1
+    [[ ${parent//[[:space:]]/} == "$old_pid" ]] || return 1
+    [[ $(executable "/proc/$new_pid/exe") == "$new_executable" ]]
+}
+
+abort_upgrade() {
+    if old_master_alive && new_master_alive; then
+        kill -QUIT "$new_pid" || true
+    fi
+    fail "$*. Old master was not stopped; inspect nginx.service and the Nginx error log before rerunning /usr/lib/nginx/nginx-upgrade"
+}
+
+[[ $# == 0 ]] || fail "Usage: /usr/lib/nginx/nginx-upgrade"
+(( EUID == 0 )) || fail "Run /usr/lib/nginx/nginx-upgrade as root"
+upgrade_timeout=${NGINX_UPGRADE_TIMEOUT:-10}
+[[ $upgrade_timeout =~ ^[1-9][0-9]*$ ]] || fail "NGINX_UPGRADE_TIMEOUT must be a positive integer in seconds"
+systemctl --quiet is-active "$service" || unsupported "Nginx service is not active"
+
+[[ ! -e $pidfile.oldbin ]] || pending "Previous upgrade is still draining connections; see $pidfile.oldbin"
+[[ $(systemctl show --value -p Type "$service") == forking ]] || unsupported "Expected Type=forking"
+[[ $(systemctl show --value -p PIDFile "$service") == "$pidfile" ]] || unsupported "Unexpected service PIDFile"
+old_pid=$(read_pid "$pidfile") || unsupported "Cannot read the current master PID"
+[[ $(systemctl show --value -p MainPID "$service") == "$old_pid" ]] || unsupported "Service MainPID does not match $pidfile"
+old_executable=$(executable "/proc/$old_pid/exe") || unsupported "Current master is not running"
+new_executable=$(executable "$binary") || fail "Installed binary is missing"
+
+if [[ $old_executable == "$new_executable" ]]; then
+    echo "nginx-upgrade: installed binary is already running"
+    exit 3
+fi
+
+nofile=$(systemctl show --value -p LimitNOFILE "$service")
+[[ $nofile != infinity ]] || nofile=unlimited
+ulimit -n "$nofile"
+"$binary" -t -q -g 'daemon on; master_process on;' || fail "New binary rejected the configuration; old master is unchanged"
+kill -USR2 "$old_pid" || fail "Cannot signal the old master"
+
+deadline=$((SECONDS + upgrade_timeout))
+ready=false
+while (( SECONDS < deadline )); do
+    new_pid=$(read_pid "$pidfile") || new_pid=
+    [[ $new_pid != "$old_pid" ]] || new_pid=
+    if new_master_alive && worker_pid=$(pgrep -o -P "$new_pid" -f '^nginx: worker process[[:space:]]*$'); then
+        sleep 1
+        if new_master_alive && [[ $(pgrep -o -P "$new_pid" -f '^nginx: worker process[[:space:]]*$') == "$worker_pid" ]]; then
+            ready=true
+            break
+        fi
+    fi
+    sleep 0.2
+done
+[[ $ready == true ]] || abort_upgrade "New master or workers did not start within $upgrade_timeout seconds"
+[[ $(read_pid "$pidfile.oldbin") == "$old_pid" ]] || abort_upgrade "Old PID file changed unexpectedly"
+old_master_alive || fail "Old master exited unexpectedly; inspect the running new master"
+kill -QUIT "$old_pid" || fail "Cannot gracefully stop the old master"
+echo "nginx-upgrade: activated master $new_pid; master $old_pid is draining existing connections"
