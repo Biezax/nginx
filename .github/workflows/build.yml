@@ -129,7 +129,7 @@ jobs:
             package_version=$(dpkg-deb -f "$package" Version)
             version=${package_version%%-*}
             [[ "$package_version" == "$version-1ubuntu$ubuntu."* ]]
-            image="ghcr.io/${GITHUB_REPOSITORY,,}:${GITHUB_REF_NAME#v}-ubuntu$ubuntu"
+            image="ghcr.io/${GITHUB_REPOSITORY,,}:$version-ubuntu$ubuntu"
             docker build -f Dockerfile.runtime --build-arg "UBUNTU_VERSION=$ubuntu" \
               --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
               --label "org.opencontainers.image.revision=$GITHUB_SHA" \

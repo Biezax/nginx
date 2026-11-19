@@ -113,7 +113,7 @@ clone_module http-lua https://github.com/openresty/lua-nginx-module
 clone_module http-geoip2 https://github.com/leev/ngx_http_geoip2_module
 clone_module http-vts --branch master --single-branch https://github.com/vozlt/nginx-module-vts.git
 clone_module njs https://github.com/nginx/njs.git
-clone_module http-acme https://github.com/nginx/nginx-acme.git
+clone_module http-acme --branch v0.4.2 --depth 1 https://github.com/nginx/nginx-acme.git
 clone_module http-otel https://github.com/nginx/nginx-otel.git
 #git clone https://github.com/gnosek/nginx-upstream-fair upstream-fair
 
