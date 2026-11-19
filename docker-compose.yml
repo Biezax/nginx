@@ -9,7 +9,7 @@ services:
       - ./output/ubuntu20:/output
     environment:
       - DISABLE_LTO=${DISABLE_LTO:-1}
-      - NGINX_VERSION=${NGINX_VERSION:-1.30.6}
+      - NGINX_VERSION=${NGINX_VERSION:-1.30.7}
       - OPENRESTY_LUAJIT_VERSION=${OPENRESTY_LUAJIT_VERSION:-v2.1-20250826}
       - PACKAGE_BASE_NAME=${PACKAGE_BASE_NAME:-nginx-custom}
       - PACKAGE_REVISION=${PACKAGE_REVISION:-}
@@ -24,7 +24,7 @@ services:
       - ./output/ubuntu22:/output
     environment:
       - DISABLE_LTO=${DISABLE_LTO:-1}
-      - NGINX_VERSION=${NGINX_VERSION:-1.30.6}
+      - NGINX_VERSION=${NGINX_VERSION:-1.30.7}
       - OPENRESTY_LUAJIT_VERSION=${OPENRESTY_LUAJIT_VERSION:-v2.1-20250826}
       - PACKAGE_BASE_NAME=${PACKAGE_BASE_NAME:-nginx-custom}
       - PACKAGE_REVISION=${PACKAGE_REVISION:-}
@@ -39,7 +39,7 @@ services:
       - ./output/ubuntu24:/output
     environment:
       - DISABLE_LTO=${DISABLE_LTO:-1}
-      - NGINX_VERSION=${NGINX_VERSION:-1.30.6}
+      - NGINX_VERSION=${NGINX_VERSION:-1.30.7}
       - OPENRESTY_LUAJIT_VERSION=${OPENRESTY_LUAJIT_VERSION:-v2.1-20250826}
       - PACKAGE_BASE_NAME=${PACKAGE_BASE_NAME:-nginx-custom}
       - PACKAGE_REVISION=${PACKAGE_REVISION:-}
