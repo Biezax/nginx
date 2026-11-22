@@ -119,13 +119,21 @@ http {{
         wait_for(lambda: not pathlib.Path("/run/nginx.pid.oldbin").exists())
         wait_for(lambda: output("systemctl", "show", "--value", "-p", "MainPID", "nginx") == new_pid)
         subprocess.run(["systemctl", "is-active", "--quiet", "nginx"], check=True)
-        result = subprocess.run(["/usr/lib/nginx/nginx-upgrade"], check=False)
-        assert result.returncode == 3, "repeating the upgrade should detect the running binary"
-        assert pathlib.Path("/run/nginx.pid").read_text().strip() == new_pid
+        subprocess.run(["dpkg-reconfigure", "-f", "noninteractive", "nginx-custom"], check=True, timeout=30)
+        pidfile = pathlib.Path("/run/nginx.pid")
+        assert pidfile.read_text().strip() == new_pid, "package configuration replaced the current master"
+
+        subprocess.run(["/usr/lib/nginx/nginx-upgrade"], check=True, timeout=30)
+        manual_pid = pidfile.read_text().strip()
+        assert manual_pid != new_pid, "explicit upgrade kept the same master"
+        assert pathlib.Path(f"/proc/{manual_pid}/exe").samefile("/usr/sbin/nginx")
+        wait_for(lambda: output("systemctl", "show", "--value", "-p", "MainPID", "nginx") == manual_pid)
+        assert request("/health") == (200, b"ready")
         stop.set()
         probing.result(timeout=10)
         assert not failures, failures
         print(f"Upgrade OK: master {old_pid} -> {new_pid}; {len(probes)} successful probes; in-flight request completed")
+        print(f"Reconfigure retained master {new_pid}; explicit upgrade activated {manual_pid}")
     finally:
         release.set()
         stop.set()

@@ -29,6 +29,8 @@ grep -aFq '/usr/share/lua/5.1/?.lua' /usr/lib/nginx/luajit/libnginx-custom-luaji
 test -x /usr/lib/nginx/nginx-upgrade
 bash -n /usr/lib/nginx/nginx-upgrade
 nginx -t
+printf '%s\n' 'include /etc/nginx/modules-available/*.conf;' 'events {}' 'http {}' > "$work/all-modules.conf"
+nginx -t -c "$work/all-modules.conf"
 systemctl --quiet is-active nginx.service
 TEST_NGINX_BINARY=/usr/sbin/nginx python3 -W error::ResourceWarning /checks/request_id_test.py
 python3 -W error::ResourceWarning /checks/upgrade_test.py "$package"

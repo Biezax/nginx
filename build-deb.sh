@@ -25,7 +25,7 @@ PACKAGE_REVISION=${PACKAGE_REVISION:-$(date +%Y%m%d%H%M)}
 PACKAGE_VERSION="${NGINX_VERSION}-1ubuntu${UBUNTU_VERSION}.${PACKAGE_REVISION}"
 LEGACY_CODENAMES=(focal jammy noble)
 
-OPENRESTY_LUAJIT_VERSION=${OPENRESTY_LUAJIT_VERSION:-v2.1-20250826}
+OPENRESTY_LUAJIT_VERSION=${OPENRESTY_LUAJIT_VERSION:-v2.1-20261117}
 OPENRESTY_LUAJIT_DIR=/build/openresty-luajit-src
 OPENRESTY_LUAJIT_PREFIX=/usr
 OPENRESTY_LUAJIT_DESTDIR=/build/openresty-luajit
@@ -113,7 +113,7 @@ clone_module http-lua https://github.com/openresty/lua-nginx-module
 clone_module http-geoip2 https://github.com/leev/ngx_http_geoip2_module
 clone_module http-vts --branch master --single-branch https://github.com/vozlt/nginx-module-vts.git
 clone_module njs https://github.com/nginx/njs.git
-clone_module http-acme --branch v0.4.2 --depth 1 https://github.com/nginx/nginx-acme.git
+clone_module http-acme https://github.com/nginx/nginx-acme.git
 clone_module http-otel https://github.com/nginx/nginx-otel.git
 #git clone https://github.com/gnosek/nginx-upstream-fair upstream-fair
 
@@ -464,6 +464,16 @@ fi
 # Not limited to upgrades: the renamed legacy package leaves its master running.
 if [ "\$1" = configure ] && [ -z "\${DPKG_ROOT:-}" ] && [ -d /run/systemd/system ]; then
     if systemctl --quiet is-active nginx.service; then
+        if [ ! -e /run/nginx.pid.oldbin ] &&
+            [ "\$(systemctl show --value -p Type nginx.service)" = forking ] &&
+            [ "\$(systemctl show --value -p PIDFile nginx.service)" = /run/nginx.pid ] &&
+            main_pid=\$(systemctl show --value -p MainPID nginx.service) &&
+            [ "\$main_pid" -gt 1 ] &&
+            [ "\$main_pid" = "\$(cat /run/nginx.pid 2>/dev/null)" ] &&
+            [ "/proc/\$main_pid/exe" -ef /usr/sbin/nginx ]; then
+            exit 0
+        fi
+
         policy=0
         if [ -x /usr/sbin/policy-rc.d ]; then
             /usr/sbin/policy-rc.d nginx.service restart || policy=\$?
@@ -473,7 +483,7 @@ if [ "\$1" = configure ] && [ -z "\${DPKG_ROOT:-}" ] && [ -d /run/systemd/system
                 upgrade=0
                 /usr/lib/nginx/nginx-upgrade || upgrade=\$?
                 case "\$upgrade" in
-                    0|3) ;;
+                    0) ;;
                     2)
                         echo "Seamless Nginx upgrade is not possible; restarting nginx.service" >&2
                         if ! deb-systemd-invoke restart nginx.service; then
@@ -619,6 +629,13 @@ echo "=== Nginx binary info ===" > "$TARGET_DIR/build-info.txt"
 egrep -ao '.,.,.,[01]+' "$BUILD_DIR/objs/nginx" >> "$TARGET_DIR/build-info.txt" 2>&1
 "$BUILD_DIR/objs/nginx" -V >> "$TARGET_DIR/build-info.txt" 2>&1
 cat /etc/*release >> "$TARGET_DIR/build-info.txt" 2>&1
+{
+    echo "=== Module revisions ==="
+    for module in "$OPENRESTY_LUAJIT_DIR" "$DEB_DIR"/modules/*; do
+        revision=$(git -C "$module" rev-parse HEAD)
+        printf '%s %s\n' "${module##*/}" "$revision"
+    done
+} >> "$TARGET_DIR/build-info.txt"
 
 echo "Done. Packages are in $TARGET_DIR:"
 ls -la "$TARGET_DIR"

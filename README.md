@@ -2,7 +2,7 @@
 
 This project builds the `nginx-custom` Debian package for Ubuntu **20.04 (focal), 22.04 (jammy), and 24.04 (noble)**. Each Ubuntu release has its own build; all packages target **amd64**. The package includes additional dynamic modules, a bundled OpenResty LuaJIT, request ID correlation, and a helper for upgrading a running Nginx binary.
 
-Docker Compose and CI default to **Nginx 1.30.6**. This is also the minimum version accepted by the build script and request ID patch. Newer releases must still pass patch application, compilation, and tests.
+Docker Compose and CI default to **Nginx 1.30.7**. The build script and request ID patch require Nginx 1.30.6 or newer.
 
 ## Building Packages
 
@@ -23,7 +23,7 @@ docker compose --profile all up --build
 docker compose --profile ubuntu20 --profile ubuntu22 up --build
 
 # Set the version or package name for a local build.
-NGINX_VERSION=1.30.6 PACKAGE_BASE_NAME=my-nginx \
+NGINX_VERSION=1.30.7 PACKAGE_BASE_NAME=my-nginx \
   docker compose --profile ubuntu24 up --build
 ```
 
@@ -33,15 +33,15 @@ These environment variables are passed to [build-deb.sh](build-deb.sh) by Compos
 
 | Parameter | Meaning | Default |
 |-----------|---------|---------|
-| `NGINX_VERSION` | Nginx source version; minimum `1.30.6` | `1.30.6` |
+| `NGINX_VERSION` | Nginx source version; minimum `1.30.6` | `1.30.7` |
 | `DISABLE_LTO` | `1` disables Link Time Optimization for the Nginx build | `1` |
-| `OPENRESTY_LUAJIT_VERSION` | OpenResty LuaJIT tag bundled with the Lua module | `v2.1-20250826` |
+| `OPENRESTY_LUAJIT_VERSION` | OpenResty LuaJIT tag bundled with the Lua module | `v2.1-20261117` |
 | `PACKAGE_BASE_NAME` | Main package name, without an Ubuntu codename suffix | `nginx-custom` |
 | `PACKAGE_REVISION` | Package revision shared by the main and transitional packages | Build date and time, `YYYYMMDDHHMM` |
 
 When `build-deb.sh` runs without `NGINX_VERSION`, it queries nginx.org for the stable version. Compose and CI explicitly supply their pinned default. CI uses `nginx-custom` and one UTC revision, `YYYYMMDDHHMM.RUN_NUMBER.RUN_ATTEMPT`, for all three Ubuntu targets.
 
-The Dockerfiles install Rust `1.81.0` for the ACME module; `RUST_VERSION` is a Docker build argument, not a Compose environment variable. Most module repositories are cloned without pinned commits, so rebuilding the same Nginx version can pick up newer module code.
+The Dockerfiles install Rust `1.85.1` for the ACME module. Override it with the Docker build argument `RUST_VERSION`. Module branches can advance between builds. Each build records the Git revisions of LuaJIT and all modules in `build-info.txt`.
 
 ### Build Output
 
@@ -187,16 +187,15 @@ With the response header example above, an HTTP request should return a 32-chara
 
 ## Service Lifecycle and Upgrades
 
-On a normal systemd installation, the package enables and starts `nginx.service`. For an active service, its `postinst` runs the upgrade helper after reloading unit files. Service policy can defer these actions.
+On a normal systemd installation, the package enables and starts `nginx.service`. During package configuration, `postinst` keeps the active master when the unit and PID file agree, the master already runs the installed executable, and no earlier upgrade is draining. Otherwise it invokes the upgrade helper if service policy allows it.
 
-The helper requires `Type=forking`, `PIDFile=/run/nginx.pid`, a matching systemd master PID, and no unfinished previous upgrade. It validates the new binary's configuration, sends `USR2` to start a new master, waits for its workers, then sends `QUIT` to the old master so existing requests can finish. This follows Nginx's [binary upgrade mechanism](https://nginx.org/en/docs/control.html#upgrade).
+Calling `/usr/lib/nginx/nginx-upgrade` directly replaces the master even when the executable is unchanged. The helper requires `Type=forking`, `PIDFile=/run/nginx.pid`, a matching systemd master PID, and no unfinished previous upgrade. It validates the configuration, sends `USR2` to start a new master, waits for its workers, then sends `QUIT` to the old master so existing requests can finish. This follows Nginx's [binary upgrade mechanism](https://nginx.org/en/docs/control.html#upgrade).
 
 | Helper exit code | Meaning | Package configuration action |
 |------------------|---------|------------------------------|
 | `0` | New master is active; old connections are draining | Succeeds |
 | `1` | Upgrade failed; inspect processes and logs | Fails |
 | `2` | Seamless upgrade prerequisites are not met; helper left Nginx unchanged | Attempts a service restart, which can interrupt connections |
-| `3` | Installed binary is already running | Succeeds |
 | `4` | A previous upgrade is still draining connections | Fails; retry after it finishes |
 
 `NGINX_UPGRADE_TIMEOUT` controls the wait for the new master and workers, defaulting to 10 seconds. It does not limit the time allowed for old connections to drain. A manual retry with a longer startup timeout is:

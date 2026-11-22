@@ -1,7 +1,7 @@
 #!/bin/bash
 # Seamless Nginx binary upgrade for nginx.service.
 # Exit codes: 0 upgraded; 1 failed, inspect the running master; 2 not possible,
-# Nginx was not changed and a restart is safe; 3 installed binary already runs;
+# Nginx was not changed and a restart is safe;
 # 4 previous upgrade is still draining, Nginx was not changed, retry later.
 set -euo pipefail
 
@@ -69,11 +69,6 @@ old_pid=$(read_pid "$pidfile") || unsupported "Cannot read the current master PI
 [[ $(systemctl show --value -p MainPID "$service") == "$old_pid" ]] || unsupported "Service MainPID does not match $pidfile"
 old_executable=$(executable "/proc/$old_pid/exe") || unsupported "Current master is not running"
 new_executable=$(executable "$binary") || fail "Installed binary is missing"
-
-if [[ $old_executable == "$new_executable" ]]; then
-    echo "nginx-upgrade: installed binary is already running"
-    exit 3
-fi
 
 nofile=$(systemctl show --value -p LimitNOFILE "$service")
 [[ $nofile != infinity ]] || nofile=unlimited
